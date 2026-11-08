@@ -1,5 +1,15 @@
 import AppKit
 
+/// Posted by `penumbractl` after it changes saved presets, so a running app reloads them.
+public enum PenumbraNotifications {
+    public static let libraryChanged = Notification.Name("io.github.and2049.penumbra.libraryChanged")
+
+    public static func postLibraryChanged() {
+        DistributedNotificationCenter.default().postNotificationName(
+            libraryChanged, object: nil, userInfo: nil, deliverImmediately: true)
+    }
+}
+
 /// Reports when the appearance may have changed. Needs a running AppKit event loop.
 ///
 /// The distributed notification must use `.deliverImmediately`, because AppKit otherwise holds

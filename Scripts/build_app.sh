@@ -4,12 +4,13 @@ set -eu
 cd "$(dirname "$0")/.."
 
 swift build -c release
-bin="$(swift build -c release --show-bin-path)/Penumbra"
+bin_dir="$(swift build -c release --show-bin-path)"
 
 app="Build/Penumbra.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
-cp "$bin" "$app/Contents/MacOS/Penumbra"
+cp "$bin_dir/Penumbra" "$bin_dir/penumbractl" "$app/Contents/MacOS/"
 cp Resources/Info.plist "$app/Contents/Info.plist"
+codesign --force --sign - "$app/Contents/MacOS/penumbractl"
 codesign --force --sign - "$app"
 echo "Built $app"
