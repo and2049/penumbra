@@ -6,6 +6,7 @@ final class MenuBarController: NSObject {
     private let model: AppModel
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let popover = NSPopover()
+    private let editor = EditorWindowController()
 
     init(model: AppModel) {
         self.model = model
@@ -15,6 +16,11 @@ final class MenuBarController: NSObject {
         let host = NSHostingController(rootView: MenuBarPanel(model: model, state: PanelState()))
         host.sizingOptions = [.preferredContentSize]
         popover.contentViewController = host
+        model.showEditor = { [weak self] draft in
+            guard let self else { return }
+            popover.performClose(nil)
+            editor.show(draft, model: model)
+        }
 
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: "circle.lefthalf.filled", accessibilityDescription: "Penumbra")

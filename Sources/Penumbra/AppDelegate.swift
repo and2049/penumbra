@@ -37,6 +37,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
+    /// Handles `penumbra://new`, `penumbra://edit?name=…` and `penumbra://apply?name=…`.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let model else { return }
+        for url in urls where url.scheme == "penumbra" {
+            let name = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first { $0.name == "name" }?.value
+            switch url.host() {
+            case "new":
+                model.newPreset()
+            case "edit":
+                if let preset = name.flatMap(model.preset(named:)) { model.edit(preset) }
+            case "apply":
+                if let preset = name.flatMap(model.preset(named:)) { model.apply(preset) }
+            default:
+                break
+            }
+        }
+    }
+
     @objc private func libraryChanged() {
         model?.libraryChangedElsewhere()
     }

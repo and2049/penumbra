@@ -12,19 +12,25 @@ final class AppModel {
     private(set) var isActivePresetModified = false
     private(set) var undoPresetName: String?
     private(set) var nightShift: NightShiftStatus?
+    private(set) var loginItem: LoginItem.State = .disabled
     private(set) var isBusy = false
     /// The outcome of the last action, when there's something to say.
     private(set) var message: String?
     /// Set when saved presets can't be read. Penumbra then changes nothing.
     private(set) var loadError: String?
 
+    /// Set by the menu bar controller, which owns the editor window.
+    var showEditor: ((PresetDraft) -> Void)?
+
     private let system: any ThemeSystem
+    private let store: PresetStore
     private let nightShiftClient = NightShiftClient()
     private var engine: ThemeEngine?
     private var lastOperation: Task<Void, Never>?
 
     init(system: any ThemeSystem, store: PresetStore) {
         self.system = system
+        self.store = store
         appearance = system.currentAppearance
         do {
             engine = try ThemeEngine(system: system, store: store)
@@ -37,11 +43,72 @@ final class AppModel {
     func refresh() {
         appearance = system.currentAppearance
         nightShift = nightShiftClient?.status()
+        loginItem = LoginItem.state
         guard let engine else { return }
         presets = engine.library.presets
         activePresetID = engine.library.activePresetID
         undoPresetName = engine.library.undo?.presetName
         isActivePresetModified = engine.activePresetIsModified()
+    }
+
+    var isAutoWithoutSchedule: Bool {
+        guard let active = presets.first(where: { $0.id == activePresetID }), case .auto = active.kind else { return false }
+        return nightShift?.mode == .off
+    }
+
+    func preset(named name: String) -> Preset? {
+        presets.first { $0.name == name }
+    }
+
+    func newPreset() {
+        showEditor?(PresetDraft(preset: nil, store: store))
+    }
+
+    func edit(_ preset: Preset) {
+        showEditor?(PresetDraft(preset: preset, store: store))
+    }
+
+    /// Saves an edited preset, and applies it again if it's the active one.
+    func save(_ draft: PresetDraft, completion: @escaping @MainActor (Bool) -> Void) {
+        draft.error = nil
+        draft.isSaving = true
+        enqueue { engine in
+            defer { draft.isSaving = false }
+            do {
+                let preset = try draft.preset(importingInto: self.store)
+                try engine.save(preset: preset)
+                if engine.library.activePresetID == preset.id {
+                    self.show(await engine.apply(presetID: preset.id))
+                }
+                completion(true)
+            } catch {
+                draft.error = "Couldn't save the preset: \(error)"
+                completion(false)
+            }
+        }
+    }
+
+    func deletePreset(id: Preset.ID) {
+        guard let preset = presets.first(where: { $0.id == id }) else { return }
+        delete(preset)
+    }
+
+    func setNightShift(mode: NightShiftStatus.Mode, from: Date, to: Date) {
+        guard let client = nightShiftClient else { return }
+        if mode == .custom {
+            client.setSchedule(from: NightShiftStatus.Time(from), to: NightShiftStatus.Time(to))
+        }
+        client.setMode(mode)
+        refresh()
+    }
+
+    func setOpenAtLogin(_ enabled: Bool) {
+        do {
+            try LoginItem.setEnabled(enabled)
+        } catch {
+            message = "Couldn't change Open at Login: \(error)"
+        }
+        refresh()
     }
 
     func appearanceMayHaveChanged() {

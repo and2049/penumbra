@@ -12,6 +12,10 @@ final class PanelState {
     var newName = ""
     var presetToDelete: Preset?
     var hoveredPresetID: Preset.ID?
+    var isEditingSchedule = false
+    var scheduleMode: NightShiftStatus.Mode = .custom
+    var scheduleFrom = Date()
+    var scheduleTo = Date()
 }
 
 struct MenuBarPanel: View {
@@ -24,6 +28,9 @@ struct MenuBarPanel: View {
 
             if let error = model.loadError {
                 notice("Couldn't read saved presets, so Penumbra won't change anything: \(error)")
+            }
+            if model.isAutoWithoutSchedule {
+                notice("The active preset is Auto, but the Night Shift schedule is off, so the appearance won't switch.")
             }
             if let message = model.message {
                 notice(message)
@@ -52,8 +59,69 @@ struct MenuBarPanel: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Penumbra").font(.headline)
             row("Appearance", model.appearance == .dark ? "Dark" : "Light")
-            row("Night Shift", nightShiftText)
+            if state.isEditingSchedule {
+                scheduleEditor
+            } else {
+                HStack {
+                    Text("Night Shift").foregroundStyle(.secondary)
+                    Spacer()
+                    Button(nightShiftText, action: beginEditingSchedule)
+                        .buttonStyle(.link)
+                        .disabled(model.nightShift == nil)
+                        .help("Change the schedule that Auto follows")
+                }
+                .font(.callout)
+            }
         }
+    }
+
+    private var scheduleEditor: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Night Shift schedule").font(.callout).foregroundStyle(.secondary)
+            Picker("Schedule", selection: Binding(get: { state.scheduleMode }, set: { state.scheduleMode = $0 })) {
+                Text("Off").tag(NightShiftStatus.Mode.off)
+                Text("Sun").tag(NightShiftStatus.Mode.sunsetToSunrise)
+                Text("Custom").tag(NightShiftStatus.Mode.custom)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            if state.scheduleMode == .sunsetToSunrise, model.nightShift?.isSunSchedulePermitted == false {
+                Text("Sunset to sunrise needs Location Services.").font(.caption).foregroundStyle(.secondary)
+            }
+            if state.scheduleMode == .custom {
+                timeRow("Dark from", Binding(get: { state.scheduleFrom }, set: { state.scheduleFrom = $0 }))
+                timeRow("Light from", Binding(get: { state.scheduleTo }, set: { state.scheduleTo = $0 }))
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel") { state.isEditingSchedule = false }
+                Button("Set") {
+                    model.setNightShift(mode: state.scheduleMode, from: state.scheduleFrom, to: state.scheduleTo)
+                    state.isEditingSchedule = false
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .font(.callout)
+    }
+
+    private func timeRow(_ label: String, _ time: Binding<Date>) -> some View {
+        HStack {
+            Text(label)
+            Spacer()
+            DatePicker(label, selection: time, displayedComponents: .hourAndMinute)
+                .labelsHidden()
+        }
+    }
+
+    private func beginEditingSchedule() {
+        guard let status = model.nightShift else { return }
+        state.scheduleMode = status.mode
+        state.scheduleFrom = status.from.date
+        state.scheduleTo = status.to.date
+        state.isEditingSchedule = true
     }
 
     private func row(_ label: String, _ value: String) -> some View {
@@ -90,6 +158,7 @@ struct MenuBarPanel: View {
                         appearance: model.appearance,
                         apply: { model.apply(preset) },
                         hover: { state.hoveredPresetID = $0 ? preset.id : nil },
+                        edit: { model.edit(preset) },
                         delete: { state.presetToDelete = preset })
                 }
             }
@@ -110,12 +179,20 @@ struct MenuBarPanel: View {
             }
         } else {
             VStack(alignment: .leading, spacing: 6) {
+                Button("New Preset…") { model.newPreset() }
                 Button("Save Current Look…") {
                     state.newName = ""
                     state.isNaming = true
                 }
                 if let name = model.undoPresetName {
                     Button("Undo “\(name)”") { model.undo() }
+                }
+                Divider()
+                Toggle("Open at Login", isOn: Binding(
+                    get: { model.loginItem == .enabled }, set: { model.setOpenAtLogin($0) }))
+                    .toggleStyle(.checkbox)
+                if model.loginItem == .needsApproval {
+                    Button("Allow in System Settings…") { LoginItem.openSystemSettings() }
                 }
                 Button("Quit Penumbra") { NSApp.terminate(nil) }
                     .keyboardShortcut("q")
@@ -144,12 +221,19 @@ struct MenuBarPanel: View {
         case .sunsetToSunrise:
             return "Sunset to sunrise"
         case .custom:
-            return "\(format(status.from)) to \(format(status.to))"
+            return "\(status.from.text) to \(status.to.text)"
         }
     }
+}
 
-    private func format(_ time: NightShiftStatus.Time) -> String {
-        String(format: "%02d:%02d", time.hour, time.minute)
+extension NightShiftStatus.Time {
+    var date: Date {
+        Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: Date()) ?? Date()
+    }
+
+    init(_ date: Date) {
+        let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+        self.init(hour: parts.hour ?? 0, minute: parts.minute ?? 0)
     }
 }
 
@@ -161,6 +245,7 @@ private struct PresetRow: View {
     let appearance: Appearance
     let apply: () -> Void
     let hover: (Bool) -> Void
+    let edit: () -> Void
     let delete: () -> Void
 
     var body: some View {
@@ -194,6 +279,7 @@ private struct PresetRow: View {
         .onHover(perform: hover)
         .help(isModified ? "Changed since it was applied. Click to apply it again." : "Apply \(preset.name)")
         .contextMenu {
+            Button("Edit…", action: edit)
             Button("Delete…", role: .destructive, action: delete)
         }
     }
@@ -203,22 +289,6 @@ private struct PresetRow: View {
         case .fixed(.light, _): "sun.max"
         case .fixed(.dark, _): "moon"
         case .auto: "circle.lefthalf.filled"
-        }
-    }
-}
-
-private extension AccentColor {
-    var swatch: AnyShapeStyle {
-        switch self {
-        case .multicolor: AnyShapeStyle(AngularGradient(colors: [.red, .yellow, .green, .blue, .purple, .red], center: .center))
-        case .graphite: AnyShapeStyle(Color.gray)
-        case .red: AnyShapeStyle(Color.red)
-        case .orange: AnyShapeStyle(Color.orange)
-        case .yellow: AnyShapeStyle(Color.yellow)
-        case .green: AnyShapeStyle(Color.green)
-        case .blue: AnyShapeStyle(Color.blue)
-        case .purple: AnyShapeStyle(Color.purple)
-        case .pink: AnyShapeStyle(Color.pink)
         }
     }
 }
