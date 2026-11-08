@@ -193,7 +193,10 @@ public final class ThemeEngine {
         guard let target = preset.wallpaperTarget(for: snapshot.appearance) else { return false }
         switch resolve(target) {
         case .still(let url):
-            return snapshot.wallpaperURL?.standardizedFileURL != url.standardizedFileURL
+            guard let current = snapshot.wallpaperURL else { return true }
+            // Save Current copies the wallpaper, so the original file counts as a match too.
+            return current.standardizedFileURL != url.standardizedFileURL
+                && !FileManager.default.contentsEqual(atPath: current.path, andPath: url.path)
         case .adaptive(let light, let dark):
             return snapshot.wallpaperURL?.lastPathComponent != ResolvedWallpaper.generatedFileName(light: light, dark: dark)
         }

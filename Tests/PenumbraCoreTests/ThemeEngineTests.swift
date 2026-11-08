@@ -228,6 +228,20 @@ struct TestFailure: Error {}
         #expect(engine.activePresetIsModified())
     }
 
+    @Test func savedCopyOfTheWallpaperStillMatchesTheOriginal() throws {
+        let image = FileManager.default.temporaryDirectory.appending(path: "penumbra-\(UUID()).png")
+        try Data("image".utf8).write(to: image)
+        defer { try? FileManager.default.removeItem(at: image) }
+        system.snapshot = SystemSnapshot(switchesAutomatically: false, appearance: .light, accent: .blue, wallpaperURL: image)
+        let engine = try makeEngine()
+
+        _ = try engine.saveCurrent(name: "Mine")
+        #expect(!engine.activePresetIsModified())
+
+        try Data("changed".utf8).write(to: image)
+        #expect(engine.activePresetIsModified())
+    }
+
     @Test func modifiedRecognisesTheGeneratedAdaptiveWallpaper() async throws {
         let engine = try makeEngine(with: autoPreset)
         await engine.apply(presetID: autoPreset.id)
