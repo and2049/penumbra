@@ -7,6 +7,7 @@ import PenumbraSystem
 @Observable
 final class AppModel {
     private(set) var appearance: Appearance
+    private(set) var switchesAutomatically = false
     private(set) var presets: [Preset] = []
     private(set) var activePresetID: Preset.ID?
     private(set) var isActivePresetModified = false
@@ -35,13 +36,14 @@ final class AppModel {
         do {
             engine = try ThemeEngine(system: system, store: store)
         } catch {
-            loadError = String(describing: error)
+            loadError = error.localizedDescription
         }
         refresh()
     }
 
     func refresh() {
         appearance = system.currentAppearance
+        switchesAutomatically = system.captureSnapshot().switchesAutomatically
         nightShift = nightShiftClient?.status()
         loginItem = LoginItem.state
         guard let engine else { return }
@@ -82,7 +84,7 @@ final class AppModel {
                 }
                 completion(true)
             } catch {
-                draft.error = "Couldn't save the preset: \(error)"
+                draft.error = "Couldn't save the preset. \(error.localizedDescription)"
                 completion(false)
             }
         }
@@ -106,7 +108,7 @@ final class AppModel {
         do {
             try LoginItem.setEnabled(enabled)
         } catch {
-            message = "Couldn't change Open at Login: \(error)"
+            message = "Couldn't change Open at Login. \(error.localizedDescription)"
         }
         refresh()
     }
@@ -122,7 +124,7 @@ final class AppModel {
             do {
                 try engine.reload()
             } catch {
-                self.message = "Couldn't reload presets: \(error)"
+                self.message = "Couldn't reload presets. \(error.localizedDescription)"
             }
         }
     }
@@ -142,10 +144,10 @@ final class AppModel {
         enqueue { engine in
             do {
                 if let problem = try engine.saveCurrent(name: name).wallpaperProblem {
-                    self.message = "Saved without the wallpaper: \(problem)"
+                    self.message = "Saved without the wallpaper. \(problem)"
                 }
             } catch {
-                self.message = "Couldn't save the preset: \(error)"
+                self.message = "Couldn't save the preset. \(error.localizedDescription)"
             }
         }
     }
@@ -156,7 +158,7 @@ final class AppModel {
             do {
                 try engine.delete(presetID: preset.id)
             } catch {
-                self.message = "Couldn't delete the preset: \(error)"
+                self.message = "Couldn't delete the preset. \(error.localizedDescription)"
             }
         }
     }
@@ -181,7 +183,16 @@ final class AppModel {
 
     private func show(_ report: ApplyReport) {
         guard !report.succeeded else { return }
-        let details = report.failures.map { "\($0.key.rawValue): \($0.value)" }.sorted().joined(separator: "\n")
-        message = "Some changes failed.\n\(details)"
+        message = report.failures.map { step, reason in
+            let action = switch step {
+            case .appearance: "Couldn't change light and dark mode."
+            case .wallpaper: "Couldn't change the wallpaper."
+            case .restoring: "Couldn't undo."
+            case .saving: "Couldn't save your presets."
+            }
+            return "\(action) \(reason)"
+        }
+        .sorted()
+        .joined(separator: "\n")
     }
 }

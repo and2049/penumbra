@@ -135,17 +135,24 @@ extension ThemeColor {
 extension AccentColor {
     var title: String { rawValue.capitalized }
 
-    var swatch: AnyShapeStyle {
-        switch self {
-        case .multicolor: AnyShapeStyle(AngularGradient(colors: [.red, .yellow, .green, .blue, .purple, .red], center: .center))
-        case .graphite: AnyShapeStyle(Color.gray)
-        case .red: AnyShapeStyle(Color.red)
-        case .orange: AnyShapeStyle(Color.orange)
-        case .yellow: AnyShapeStyle(Color.yellow)
-        case .green: AnyShapeStyle(Color.green)
-        case .blue: AnyShapeStyle(Color.blue)
-        case .purple: AnyShapeStyle(Color.purple)
-        case .pink: AnyShapeStyle(Color.pink)
+    /// The colour macOS uses for each accent, measured from `controlAccentColor` on macOS 27.2.
+    var displayColor: Color {
+        let (red, green, blue): (Double, Double, Double) = switch self {
+        case .multicolor, .blue: (0.000, 0.478, 1.000)
+        case .graphite: (0.596, 0.596, 0.596)
+        case .red: (0.878, 0.220, 0.243)
+        case .orange: (0.969, 0.510, 0.106)
+        case .yellow: (1.000, 0.780, 0.149)
+        case .green: (0.384, 0.729, 0.275)
+        case .purple: (0.584, 0.239, 0.588)
+        case .pink: (0.969, 0.310, 0.620)
         }
+        return Color(.sRGB, red: red, green: green, blue: blue)
+    }
+
+    var swatch: AnyShapeStyle {
+        guard self == .multicolor else { return AnyShapeStyle(displayColor) }
+        let wheel: [AccentColor] = [.red, .orange, .yellow, .green, .blue, .purple, .pink, .red]
+        return AnyShapeStyle(AngularGradient(colors: wheel.map(\.displayColor), center: .center))
     }
 }

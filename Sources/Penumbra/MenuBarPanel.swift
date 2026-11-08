@@ -58,7 +58,7 @@ struct MenuBarPanel: View {
     private var status: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Penumbra").font(.headline)
-            row("Appearance", model.appearance == .dark ? "Dark" : "Light")
+            row("Appearance", (model.appearance == .dark ? "Dark" : "Light") + (model.switchesAutomatically ? ", Auto" : ""))
             if state.isEditingSchedule {
                 scheduleEditor
             } else {
@@ -162,7 +162,7 @@ struct MenuBarPanel: View {
                         delete: { state.presetToDelete = preset })
                 }
             }
-            .disabled(model.isBusy)
+            .disabled(model.isBusy || model.loadError != nil)
         }
     }
 
@@ -179,14 +179,17 @@ struct MenuBarPanel: View {
             }
         } else {
             VStack(alignment: .leading, spacing: 6) {
-                Button("New Preset…") { model.newPreset() }
-                Button("Save Current Look…") {
-                    state.newName = ""
-                    state.isNaming = true
+                Group {
+                    Button("New Preset…") { model.newPreset() }
+                    Button("Save Current Look…") {
+                        state.newName = ""
+                        state.isNaming = true
+                    }
+                    if let name = model.undoPresetName {
+                        Button("Undo “\(name)”") { model.undo() }
+                    }
                 }
-                if let name = model.undoPresetName {
-                    Button("Undo “\(name)”") { model.undo() }
-                }
+                .disabled(model.loadError != nil)
                 Divider()
                 Toggle("Open at Login", isOn: Binding(
                     get: { model.loginItem == .enabled }, set: { model.setOpenAtLogin($0) }))
