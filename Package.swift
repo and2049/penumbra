@@ -6,6 +6,8 @@ let package = Package(
     platforms: [.macOS(.v26)],
     targets: [
         .target(name: "PenumbraCore"),
+        .target(name: "PenumbraSystem", dependencies: ["PenumbraCore"]),
         .testTarget(name: "PenumbraCoreTests", dependencies: ["PenumbraCore"]),
+        .testTarget(name: "PenumbraSystemTests", dependencies: ["PenumbraCore", "PenumbraSystem"]),
     ]
 )
