@@ -1,4 +1,4 @@
-// Draws the Penumbra app icon: a partial solar eclipse against a dusk sky, with the soft
+// Draws the Penumbra app icon: a partial solar eclipse against a mauve sky, with the soft
 // half-shadow the app is named after along the moon's edge. Uses only CoreGraphics, so it runs
 // with the Command Line Tools.
 //
@@ -20,8 +20,8 @@ func rgb(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat = 1) -> CGColor 
 }
 
 enum Colors {
-    static let skyTop = rgb(0.96, 0.58, 0.36)
-    static let skyBottom = rgb(0.17, 0.14, 0.33)
+    static let skyTop = rgb(0.55, 0.37, 0.62)
+    static let skyBottom = rgb(0.19, 0.14, 0.36)
     static let sunCore = rgb(1.00, 1.00, 1.00)
     static let sunEdge = rgb(1.00, 0.98, 0.94)
     static let halo = rgb(1.00, 0.95, 0.86)
