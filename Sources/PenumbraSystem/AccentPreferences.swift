@@ -21,12 +21,24 @@ extension AccentColor {
     var aquaVariant: Int? {
         self == .graphite ? 6 : nil
     }
+
+    /// Unknown values read as multicolor, the system default.
+    init(preferenceValue: Int?) {
+        self = Self.allCases.first { $0.preferenceValue == preferenceValue } ?? .multicolor
+    }
 }
 
 extension ThemeColor {
     /// `AppleHighlightColor` format.
     var preferenceString: String {
         String(format: "%.6f %.6f %.6f Other", red, green, blue)
+    }
+
+    /// Reads custom values and named ones, such as `"0.968627 0.831373 1.000000 Purple"`.
+    init?(preferenceString: String) {
+        let parts = preferenceString.split(separator: " ").prefix(3).compactMap { Double($0) }
+        guard parts.count == 3 else { return nil }
+        self.init(red: parts[0], green: parts[1], blue: parts[2])
     }
 }
 
@@ -47,10 +59,30 @@ enum AccentPreferences {
         if write(highlight.map { $0.preferenceString as CFString }, forKey: highlightKey) { notify() }
     }
 
+    static var accentValue: Int? { (read(accentKey) as? NSNumber)?.intValue }
+    static var aquaVariantValue: Int? { (read(aquaKey) as? NSNumber)?.intValue }
+    static var highlightValue: String? { read(highlightKey) as? String }
+
+    /// Puts back exact stored values, including ones Penumbra wouldn't write itself.
+    static func restore(accent: Int?, aquaVariant: Int?, highlight: String?) {
+        let changes = [
+            write(accent.map { NSNumber(value: $0) }, forKey: accentKey),
+            write(aquaVariant.map { NSNumber(value: $0) }, forKey: aquaKey),
+            write(highlight.map { $0 as CFString }, forKey: highlightKey),
+        ]
+        if changes.contains(true) { notify() }
+    }
+
+    private static func read(_ key: String) -> CFPropertyList? {
+        // Another process may have changed it, and the local cache wouldn't know.
+        CFPreferencesSynchronize(kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        return CFPreferencesCopyValue(key as CFString, kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+    }
+
     /// Returns whether the stored value changed.
     private static func write(_ value: CFPropertyList?, forKey key: String) -> Bool {
         let cfKey = key as CFString
-        let current = CFPreferencesCopyValue(cfKey, kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        let current = read(key)
         switch (current, value) {
         case (nil, nil):
             return false

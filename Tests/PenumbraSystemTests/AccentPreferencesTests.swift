@@ -11,6 +11,19 @@ import PenumbraCore
         #expect(AccentColor.pink.preferenceValue == 6)
     }
 
+    @Test func accentValuesReadBack() {
+        for accent in AccentColor.allCases {
+            #expect(AccentColor(preferenceValue: accent.preferenceValue) == accent)
+        }
+        #expect(AccentColor(preferenceValue: 99) == .multicolor)
+    }
+
+    @Test func highlightParsesNamedAndCustomValues() {
+        #expect(ThemeColor(preferenceString: "1.000000 0.500000 0.000000 Other") == ThemeColor(red: 1, green: 0.5, blue: 0))
+        #expect(ThemeColor(preferenceString: "0.25 0.5 0.75 Purple") == ThemeColor(red: 0.25, green: 0.5, blue: 0.75))
+        #expect(ThemeColor(preferenceString: "not a colour") == nil)
+    }
+
     @Test func onlyGraphiteSetsTheAquaVariant() {
         #expect(AccentColor.graphite.aquaVariant == 6)
         #expect(AccentColor.blue.aquaVariant == nil)

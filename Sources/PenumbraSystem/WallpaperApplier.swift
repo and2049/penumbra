@@ -29,6 +29,10 @@ public final class WallpaperApplier {
         }
     }
 
+    public enum RestoreError: Error, Equatable {
+        case notConfirmed
+    }
+
     private let environment: Environment
 
     public init(environment: Environment) {
@@ -56,6 +60,20 @@ public final class WallpaperApplier {
         try original.write(to: environment.storeURL, options: .atomic)
         environment.restartAgent()
         try environment.setWithPublicAPI(url)
+    }
+
+    public var currentStore: Data? {
+        try? Data(contentsOf: environment.storeURL)
+    }
+
+    /// Puts back an exact copy of the store, which also undoes any split made by the public API.
+    public func restoreStore(_ data: Data, expecting url: URL?) async throws {
+        guard currentStore != data else { return }
+        try data.write(to: environment.storeURL, options: .atomic)
+        environment.restartAgent()
+        if let url, await !tookEffect(url) {
+            throw RestoreError.notConfirmed
+        }
     }
 
     /// Returns `nil` when the store already points at this image.

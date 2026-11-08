@@ -101,6 +101,39 @@ final class ApplierHarness {
         #expect(h.publicAPICalls == [target])
     }
 
+    @Test func restoresAnExactCopyOfTheStore() async throws {
+        let h = try ApplierHarness()
+        let original = try makeStoreData()
+        try makeStoreData(url: "file:///other.png").write(to: h.storeURL)
+
+        try await h.makeApplier().restoreStore(original, expecting: URL(string: "file:///old.png"))
+
+        #expect(h.restarts == 1)
+        #expect(try Data(contentsOf: h.storeURL) == original)
+    }
+
+    @Test func restoringAMatchingStoreSkipsTheRestart() async throws {
+        let h = try ApplierHarness()
+        let original = try makeStoreData()
+        try original.write(to: h.storeURL)
+
+        try await h.makeApplier().restoreStore(original, expecting: nil)
+
+        #expect(h.restarts == 0)
+    }
+
+    @Test func restoreReportsWhenItCantBeConfirmed() async throws {
+        let h = try ApplierHarness()
+        h.agentAccepts = false
+        try makeStoreData(url: "file:///other.png").write(to: h.storeURL)
+        let applier = h.makeApplier()
+        let original = try makeStoreData()
+
+        await #expect(throws: WallpaperApplier.RestoreError.notConfirmed) {
+            try await applier.restoreStore(original, expecting: URL(string: "file:///old.png"))
+        }
+    }
+
     @Test func usesPublicAPIWhenTheStoreIsMissing() async throws {
         let h = try ApplierHarness()
         try await h.makeApplier().apply(target)
