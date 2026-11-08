@@ -5,16 +5,22 @@ import UniformTypeIdentifiers
 
 struct PresetEditorView: View {
     let draft: PresetDraft
+    let nameWarning: (String) -> String?
     let save: () -> Void
     let cancel: () -> Void
     let delete: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack {
+            HStack(alignment: .firstTextBaseline) {
                 Text("Name")
-                TextField("Preset name", text: Binding(get: { draft.name }, set: { draft.name = $0 }))
-                    .textFieldStyle(.roundedBorder)
+                VStack(alignment: .leading, spacing: 4) {
+                    TextField("Preset name", text: Binding(get: { draft.name }, set: { draft.name = $0 }))
+                        .textFieldStyle(.roundedBorder)
+                    if let warning {
+                        NameWarning(text: warning)
+                    }
+                }
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -54,7 +60,7 @@ struct PresetEditorView: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Save", action: save)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(draft.trimmedName.isEmpty || draft.isSaving)
+                    .disabled(draft.trimmedName.isEmpty || warning != nil || draft.isSaving)
             }
         }
         .padding(20)
@@ -68,6 +74,24 @@ struct PresetEditorView: View {
         } message: {
             Text("Your current settings and wallpaper won't change.")
         }
+    }
+}
+
+extension PresetEditorView {
+    private var warning: String? {
+        draft.trimmedName.isEmpty ? nil : nameWarning(draft.name)
+    }
+}
+
+/// A red line shown under a name field as soon as the name clashes with another preset.
+struct NameWarning: View {
+    let text: String
+
+    var body: some View {
+        Label(text, systemImage: "exclamationmark.circle.fill")
+            .font(.caption)
+            .foregroundStyle(.red)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

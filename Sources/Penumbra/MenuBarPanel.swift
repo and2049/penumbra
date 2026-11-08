@@ -169,13 +169,18 @@ struct MenuBarPanel: View {
     @ViewBuilder
     private var actions: some View {
         if state.isNaming {
-            HStack {
-                TextField("Preset name", text: Binding(get: { state.newName }, set: { state.newName = $0 }))
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit(save)
-                Button("Save", action: save)
-                    .disabled(trimmedName.isEmpty)
-                Button("Cancel") { state.isNaming = false }
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    TextField("Preset name", text: Binding(get: { state.newName }, set: { state.newName = $0 }))
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit(save)
+                    Button("Save", action: save)
+                        .disabled(trimmedName.isEmpty || nameWarning != nil)
+                    Button("Cancel") { state.isNaming = false }
+                }
+                if let nameWarning {
+                    NameWarning(text: nameWarning)
+                }
             }
         } else {
             VStack(alignment: .leading, spacing: 6) {
@@ -210,8 +215,12 @@ struct MenuBarPanel: View {
         state.newName.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private var nameWarning: String? {
+        trimmedName.isEmpty ? nil : model.nameWarning(for: trimmedName)
+    }
+
     private func save() {
-        guard !trimmedName.isEmpty else { return }
+        guard !trimmedName.isEmpty, nameWarning == nil else { return }
         model.saveCurrent(name: trimmedName)
         state.isNaming = false
     }

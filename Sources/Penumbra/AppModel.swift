@@ -58,6 +58,12 @@ final class AppModel {
         return nightShift?.mode == .off
     }
 
+    /// The warning to show under a name field, or `nil` if the name can be used.
+    func nameWarning(for name: String, excluding id: Preset.ID? = nil) -> String? {
+        guard let engine, engine.library.isNameTaken(name, excluding: id) else { return nil }
+        return "There's already a preset called “\(name.trimmingCharacters(in: .whitespacesAndNewlines))”."
+    }
+
     func preset(named name: String) -> Preset? {
         presets.first { $0.name == name }
     }

@@ -18,6 +18,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
         // editor has opened, and must not close that one.
         let view = PresetEditorView(
             draft: draft,
+            nameWarning: { model.nameWarning(for: $0, excluding: draft.id) },
             save: { [weak window] in
                 model.save(draft) { saved in if saved { window?.close() } }
             },
