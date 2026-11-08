@@ -14,6 +14,8 @@ usage: penumbractl <command>
   add-fixed <name> <light|dark> <accent> [image]
   add-auto <name> <light-accent> <dark-accent> [light-image dark-image]
   delete <name>
+  schedule [off | sun | HH:MM-HH:MM]            Show or set the Night Shift schedule
+  login-item [on | off]                         Show or set opening the app at login
 
 accents: \(AccentColor.allCases.map(\.rawValue).joined(separator: " "))
 """
@@ -93,6 +95,31 @@ do {
             light: ThemeVariant(wallpaper: images?.0, accent: accent(parameters[1])),
             dark: ThemeVariant(wallpaper: images?.1, accent: accent(parameters[2])))))
         PenumbraNotifications.postLibraryChanged()
+    case ("schedule", 0):
+        guard let status = NightShiftClient()?.status() else { fail("Night Shift is unavailable") }
+        switch status.mode {
+        case .off: print("off")
+        case .sunsetToSunrise: print("sun")
+        case .custom: print("\(status.from.text)-\(status.to.text)")
+        }
+        if !status.isSunSchedulePermitted { print("sunset to sunrise needs location access") }
+    case ("schedule", 1):
+        guard let client = NightShiftClient() else { fail("Night Shift is unavailable") }
+        switch parameters[0] {
+        case "off": client.setMode(.off)
+        case "sun": client.setMode(.sunsetToSunrise)
+        default:
+            let times = parameters[0].split(separator: "-").compactMap { NightShiftStatus.Time(String($0)) }
+            guard times.count == 2 else { fail("expected HH:MM-HH:MM") }
+            client.setSchedule(from: times[0], to: times[1])
+            client.setMode(.custom)
+        }
+    case ("login-item", 0):
+        print(LoginItem.state)
+    case ("login-item", 1):
+        guard ["on", "off"].contains(parameters[0]) else { fail("expected on or off") }
+        try LoginItem.setEnabled(parameters[0] == "on")
+        print(LoginItem.state)
     case ("delete", 1):
         try engine.delete(presetID: preset(named: parameters[0], in: engine).id)
         PenumbraNotifications.postLibraryChanged()
