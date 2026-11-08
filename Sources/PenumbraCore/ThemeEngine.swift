@@ -183,12 +183,8 @@ public final class ThemeEngine {
         removeUnusedFiles()
     }
 
-    /// Names are how the command-line tool and URL scheme find presets, so they must be unique.
     private func checkNameIsFree(_ name: String, for id: Preset.ID?) throws {
-        let taken = library.presets.contains {
-            $0.id != id && $0.name.compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
-        }
-        if taken { throw ThemeEngineError.duplicateName(name) }
+        if library.isNameTaken(name, excluding: id) { throw ThemeEngineError.duplicateName(name) }
     }
 
     /// Deletes copied and generated wallpapers that nothing uses any more. Files still shown

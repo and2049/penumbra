@@ -22,6 +22,17 @@ import Testing
         #expect(try store.load() == library)
     }
 
+    @Test func nameCheckIgnoresCaseAccentsAndSpaces() {
+        var library = PresetLibrary()
+        let preset = Preset(name: "Café", kind: .fixed(appearance: .light, variant: ThemeVariant()))
+        library.presets = [preset]
+
+        #expect(library.isNameTaken("cafe"))
+        #expect(library.isNameTaken("  CAFÉ "))
+        #expect(!library.isNameTaken("Cafés"))
+        #expect(!library.isNameTaken("Café", excluding: preset.id))
+    }
+
     @Test func newerSchemaIsRefusedAndLeftUntouched() throws {
         try FileManager.default.createDirectory(at: store.rootDirectory, withIntermediateDirectories: true)
         let contents = Data(#"{"schemaVersion":99,"presets":[]}"#.utf8)

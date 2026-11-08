@@ -18,6 +18,15 @@ public struct PresetLibrary: Codable, Sendable, Equatable {
     public var activePreset: Preset? {
         presets.first { $0.id == activePresetID }
     }
+
+    /// Names are how the command-line tool and URL scheme find presets, so they must be unique,
+    /// ignoring case and accents. `id` is the preset being renamed, which may keep its own name.
+    public func isNameTaken(_ name: String, excluding id: Preset.ID? = nil) -> Bool {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return presets.contains {
+            $0.id != id && $0.name.compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+        }
+    }
 }
 
 public enum PresetStoreError: Error, Equatable, LocalizedError {
