@@ -203,6 +203,37 @@ struct TestFailure: Error {}
         #expect(engine.library.activePresetID == nil)
     }
 
+    @Test func deletingRemovesFilesNothingUses() throws {
+        let engine = try makeEngine()
+        try FileManager.default.createDirectory(at: store.wallpaperDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: store.generatedDirectory, withIntermediateDirectories: true)
+        for name in ["kept.png", "unused.png", "shown.png"] {
+            try Data(name.utf8).write(to: store.wallpaperURL(named: name))
+        }
+        try Data().write(to: store.generatedDirectory.appending(path: "old-pair.heic"))
+        system.snapshot.wallpaperURL = store.wallpaperURL(named: "shown.png")
+
+        let keeper = Preset(name: "K", kind: .fixed(appearance: .light, variant: ThemeVariant(wallpaper: .init(imageName: "kept.png"))))
+        let doomed = Preset(name: "D", kind: .fixed(appearance: .light, variant: ThemeVariant(wallpaper: .init(imageName: "unused.png"))))
+        try engine.save(preset: keeper)
+        try engine.save(preset: doomed)
+        try engine.delete(presetID: doomed.id)
+
+        let left = try FileManager.default.contentsOfDirectory(atPath: store.wallpaperDirectory.path).sorted()
+        #expect(left == ["kept.png", "shown.png"])
+        #expect(try FileManager.default.contentsOfDirectory(atPath: store.generatedDirectory.path).isEmpty)
+    }
+
+    @Test func generatedWallpaperForAnAutoPresetIsKept() throws {
+        let engine = try makeEngine()
+        try FileManager.default.createDirectory(at: store.generatedDirectory, withIntermediateDirectories: true)
+        try Data().write(to: store.generatedDirectory.appending(path: "l-d.heic"))
+
+        try engine.save(preset: autoPreset)
+
+        #expect(try FileManager.default.contentsOfDirectory(atPath: store.generatedDirectory.path) == ["l-d.heic"])
+    }
+
     @Test func modifiedComparesAgainstTheActivePreset() async throws {
         let engine = try makeEngine(with: fixedPreset)
         #expect(!engine.activePresetIsModified())

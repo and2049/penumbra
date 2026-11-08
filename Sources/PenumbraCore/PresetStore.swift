@@ -34,6 +34,8 @@ public struct PresetStore: Sendable {
 
     public var libraryURL: URL { rootDirectory.appending(path: "presets.json") }
     public var wallpaperDirectory: URL { rootDirectory.appending(path: "Wallpapers", directoryHint: .isDirectory) }
+    /// Light/dark HEICs built from preset wallpapers.
+    public var generatedDirectory: URL { rootDirectory.appending(path: "Generated", directoryHint: .isDirectory) }
 
     public func load() throws -> PresetLibrary {
         guard FileManager.default.fileExists(atPath: libraryURL.path) else { return PresetLibrary() }
@@ -64,5 +66,13 @@ public struct PresetStore: Sendable {
 
     public func wallpaperURL(named name: String) -> URL {
         wallpaperDirectory.appending(path: name)
+    }
+
+    /// Deletes files in `directory` whose names aren't in `keeping`.
+    func removeFiles(in directory: URL, keeping: Set<String>) {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        for name in names where !keeping.contains(name) {
+            try? FileManager.default.removeItem(at: directory.appending(path: name))
+        }
     }
 }

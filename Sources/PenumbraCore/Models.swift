@@ -87,6 +87,13 @@ extension Preset {
         }
     }
 
+    public var variants: [ThemeVariant] {
+        switch kind {
+        case .fixed(_, let variant): [variant]
+        case .auto(let light, let dark): [light, dark]
+        }
+    }
+
     public func variant(for appearance: Appearance) -> ThemeVariant {
         switch kind {
         case .fixed(_, let variant): variant

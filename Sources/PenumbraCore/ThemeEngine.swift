@@ -157,10 +157,10 @@ public final class ThemeEngine {
             library.presets.append(preset)
         }
         try store.save(library)
+        removeUnusedFiles()
     }
 
-    /// Removes a preset. System settings and wallpaper files stay as they are, because the
-    /// current wallpaper or the undo record may still use them.
+    /// Removes a preset. System settings stay as they are.
     public func delete(presetID: Preset.ID) throws {
         library.presets.removeAll { $0.id == presetID }
         if library.activePresetID == presetID {
@@ -168,6 +168,23 @@ public final class ThemeEngine {
             library.lastAppliedAppearance = nil
         }
         try store.save(library)
+        removeUnusedFiles()
+    }
+
+    /// Deletes copied and generated wallpapers that nothing uses any more. Files still shown
+    /// as the wallpaper, or needed by undo, are kept even without a preset.
+    func removeUnusedFiles() {
+        var keep = Set([system.captureSnapshot().wallpaperURL, library.undo?.snapshot.wallpaperURL]
+            .compactMap { $0?.lastPathComponent })
+        for preset in library.presets {
+            keep.formUnion(preset.variants.compactMap { $0.wallpaper?.imageName })
+            if case .adaptive(let light, let dark)? = preset.wallpaperTarget(for: .light) {
+                keep.insert(ResolvedWallpaper.generatedFileName(
+                    light: store.wallpaperURL(named: light), dark: store.wallpaperURL(named: dark)))
+            }
+        }
+        store.removeFiles(in: store.wallpaperDirectory, keeping: keep)
+        store.removeFiles(in: store.generatedDirectory, keeping: keep)
     }
 
     /// Whether the system has drifted from the active preset, for example through System Settings.

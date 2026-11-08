@@ -14,7 +14,7 @@ public final class LiveThemeSystem: ThemeSystem {
 
     /// - Parameter supportDirectory: Where generated wallpapers and the store backup are kept.
     public init(supportDirectory: URL) {
-        generatedDirectory = supportDirectory.appending(path: "Generated", directoryHint: .isDirectory)
+        generatedDirectory = PresetStore(rootDirectory: supportDirectory).generatedDirectory
         wallpaperApplier = WallpaperApplier(environment: .init(
             storeURL: FileManager.default.homeDirectoryForCurrentUser
                 .appending(path: "Library/Application Support/com.apple.wallpaper/Store/Index.plist"),
