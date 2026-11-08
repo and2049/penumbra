@@ -12,7 +12,7 @@ final class MenuBarController: NSObject {
         super.init()
 
         popover.behavior = .transient
-        let host = NSHostingController(rootView: MenuBarPanel(model: model))
+        let host = NSHostingController(rootView: MenuBarPanel(model: model, state: PanelState()))
         host.sizingOptions = [.preferredContentSize]
         popover.contentViewController = host
 
