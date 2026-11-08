@@ -3,6 +3,12 @@ import Foundation
 public enum ResolvedWallpaper: Sendable, Equatable {
     case still(URL)
     case adaptive(light: URL, dark: URL)
+
+    /// Name of the HEIC generated for an adaptive pair. Imported names are unique and never
+    /// change, so one file per pair is enough.
+    public static func generatedFileName(light: URL, dark: URL) -> String {
+        "\(light.deletingPathExtension().lastPathComponent)-\(dark.deletingPathExtension().lastPathComponent).heic"
+    }
 }
 
 /// The system settings a preset controls. Setters should do nothing when the value already
@@ -14,11 +20,13 @@ public protocol ThemeSystem: AnyObject {
     func setAccent(_ accent: AccentColor)
     func setHighlight(_ highlight: ThemeColor?)
     func setWallpaper(_ wallpaper: ResolvedWallpaper) async throws
+    func captureSnapshot() -> SystemSnapshot
+    func restore(_ snapshot: SystemSnapshot) async throws
 }
 
 public struct ApplyReport: Sendable {
     public enum Step: String, Sendable {
-        case appearance, wallpaper, saving
+        case appearance, wallpaper, restoring, saving
     }
 
     public var failures: [Step: String] = [:]
@@ -26,6 +34,12 @@ public struct ApplyReport: Sendable {
     public init() {}
 
     public var succeeded: Bool { failures.isEmpty }
+}
+
+public struct SaveCurrentResult: Sendable {
+    public var preset: Preset
+    /// Why the wallpaper was left out, if it was.
+    public var wallpaperProblem: String?
 }
 
 @MainActor
@@ -41,11 +55,22 @@ public final class ThemeEngine {
         self.library = try store.load()
     }
 
+    /// Picks up changes saved by another process.
+    public func reload() throws {
+        library = try store.load()
+    }
+
     /// Applies a preset. A failed step is reported but doesn't stop the remaining steps.
     @discardableResult
     public func apply(presetID: Preset.ID) async -> ApplyReport {
         var report = ApplyReport()
         guard let preset = library.presets.first(where: { $0.id == presetID }) else { return report }
+
+        library.undo = UndoRecord(
+            snapshot: system.captureSnapshot(),
+            presetName: preset.name,
+            previousActivePresetID: library.activePresetID,
+            previousLastAppliedAppearance: library.lastAppliedAppearance)
 
         do {
             try system.setAppearanceMode(preset.appearanceMode)
@@ -57,6 +82,25 @@ public final class ThemeEngine {
         library.activePresetID = preset.id
         library.lastAppliedAppearance = appearance
         await applyVariant(of: preset, for: appearance, report: &report)
+        save(&report)
+        return report
+    }
+
+    /// Returns the system to how it was before the last apply. Undo is kept if this fails,
+    /// so it can be tried again.
+    @discardableResult
+    public func undo() async -> ApplyReport {
+        var report = ApplyReport()
+        guard let record = library.undo else { return report }
+
+        do {
+            try await system.restore(record.snapshot)
+            library.activePresetID = record.previousActivePresetID
+            library.lastAppliedAppearance = record.previousLastAppliedAppearance
+            library.undo = nil
+        } catch {
+            report.failures[.restoring] = String(describing: error)
+        }
         save(&report)
         return report
     }
@@ -76,6 +120,35 @@ public final class ThemeEngine {
         return report
     }
 
+    /// Saves the current system state as a new active preset. With Auto on, both modes start
+    /// with the current look, since only one of them can be seen.
+    public func saveCurrent(name: String) throws -> SaveCurrentResult {
+        let snapshot = system.captureSnapshot()
+
+        var wallpaper: WallpaperSpec?
+        var problem: String?
+        if let url = snapshot.wallpaperURL {
+            do {
+                wallpaper = try store.importWallpaper(from: url)
+            } catch {
+                problem = String(describing: error)
+            }
+        } else {
+            problem = "macOS didn't report a wallpaper file"
+        }
+
+        let variant = ThemeVariant(wallpaper: wallpaper, accent: snapshot.accent, highlight: snapshot.highlight)
+        let preset = Preset(name: name, kind: snapshot.switchesAutomatically
+            ? .auto(light: variant, dark: variant)
+            : .fixed(appearance: snapshot.appearance, variant: variant))
+
+        library.presets.append(preset)
+        library.activePresetID = preset.id
+        library.lastAppliedAppearance = snapshot.appearance
+        try store.save(library)
+        return SaveCurrentResult(preset: preset, wallpaperProblem: problem)
+    }
+
     /// Adds or replaces a preset by ID.
     public func save(preset: Preset) throws {
         if let index = library.presets.firstIndex(where: { $0.id == preset.id }) {
@@ -84,6 +157,46 @@ public final class ThemeEngine {
             library.presets.append(preset)
         }
         try store.save(library)
+    }
+
+    /// Removes a preset. System settings and wallpaper files stay as they are, because the
+    /// current wallpaper or the undo record may still use them.
+    public func delete(presetID: Preset.ID) throws {
+        library.presets.removeAll { $0.id == presetID }
+        if library.activePresetID == presetID {
+            library.activePresetID = nil
+            library.lastAppliedAppearance = nil
+        }
+        try store.save(library)
+    }
+
+    /// Whether the system has drifted from the active preset, for example through System Settings.
+    public func activePresetIsModified() -> Bool {
+        guard let preset = library.activePreset else { return false }
+        let snapshot = system.captureSnapshot()
+
+        switch preset.appearanceMode {
+        case .automatic:
+            if !snapshot.switchesAutomatically { return true }
+        case .fixed(let appearance):
+            if snapshot.switchesAutomatically || snapshot.appearance != appearance { return true }
+        }
+
+        let variant = preset.variant(for: snapshot.appearance)
+        if variant.accent != snapshot.accent { return true }
+        switch (variant.highlight, snapshot.highlight) {
+        case (nil, nil): break
+        case (let expected?, let actual?) where expected.isClose(to: actual): break
+        default: return true
+        }
+
+        guard let target = preset.wallpaperTarget(for: snapshot.appearance) else { return false }
+        switch resolve(target) {
+        case .still(let url):
+            return snapshot.wallpaperURL?.standardizedFileURL != url.standardizedFileURL
+        case .adaptive(let light, let dark):
+            return snapshot.wallpaperURL?.lastPathComponent != ResolvedWallpaper.generatedFileName(light: light, dark: dark)
+        }
     }
 
     private func applyVariant(of preset: Preset, for appearance: Appearance, report: inout ApplyReport) async {

@@ -11,6 +11,15 @@ final class FakeSystem: ThemeSystem {
     var wallpapers: [ResolvedWallpaper] = []
     var appearanceError: (any Error)?
     var wallpaperError: (any Error)?
+    var restoreError: (any Error)?
+    var restored: [SystemSnapshot] = []
+    var snapshot = SystemSnapshot(switchesAutomatically: false, appearance: .light, accent: .blue, wallpaperURL: URL(fileURLWithPath: "/tmp/start.png"))
+
+    func captureSnapshot() -> SystemSnapshot { snapshot }
+    func restore(_ snapshot: SystemSnapshot) async throws {
+        if let restoreError { throw restoreError }
+        restored.append(snapshot)
+    }
 
     func setAppearanceMode(_ mode: AppearanceMode) throws {
         if let appearanceError { throw appearanceError }
@@ -90,6 +99,141 @@ struct TestFailure: Error {}
         let engine = try makeEngine()
         await engine.apply(presetID: UUID())
         #expect(system.modes.isEmpty && system.accents.isEmpty)
+    }
+
+    @Test func undoRestoresTheSnapshotFromBeforeApply() async throws {
+        let engine = try makeEngine(with: fixedPreset)
+        let before = system.snapshot
+        await engine.apply(presetID: fixedPreset.id)
+        #expect(engine.library.undo?.presetName == "Fixed")
+
+        let report = await engine.undo()
+
+        #expect(report.succeeded)
+        #expect(system.restored == [before])
+        #expect(engine.library.undo == nil)
+        #expect(engine.library.activePresetID == nil)
+    }
+
+    @Test func undoGoesBackToThePreviousPreset() async throws {
+        let engine = try makeEngine(with: autoPreset, fixedPreset)
+        await engine.apply(presetID: autoPreset.id)
+        await engine.apply(presetID: fixedPreset.id)
+
+        await engine.undo()
+
+        #expect(engine.library.activePresetID == autoPreset.id)
+    }
+
+    @Test func undoSurvivesARelaunch() async throws {
+        let engine = try makeEngine(with: fixedPreset)
+        await engine.apply(presetID: fixedPreset.id)
+
+        let relaunched = try ThemeEngine(system: system, store: store)
+        await relaunched.undo()
+
+        #expect(system.restored.count == 1)
+    }
+
+    @Test func failedUndoIsKeptForAnotherTry() async throws {
+        let engine = try makeEngine(with: fixedPreset)
+        await engine.apply(presetID: fixedPreset.id)
+        system.restoreError = TestFailure()
+
+        let report = await engine.undo()
+
+        #expect(report.failures[.restoring] != nil)
+        #expect(engine.library.undo != nil)
+        #expect(engine.library.activePresetID == fixedPreset.id)
+    }
+
+    @Test func undoWithNothingToUndoChangesNothing() async throws {
+        let engine = try makeEngine()
+        await engine.undo()
+        #expect(system.restored.isEmpty)
+    }
+
+    @Test func saveCurrentCopiesTheWallpaperAndBecomesActive() throws {
+        let image = FileManager.default.temporaryDirectory.appending(path: "penumbra-\(UUID()).png")
+        try Data("image".utf8).write(to: image)
+        defer { try? FileManager.default.removeItem(at: image) }
+        system.snapshot = SystemSnapshot(switchesAutomatically: false, appearance: .dark, accent: .green, wallpaperURL: image)
+        let engine = try makeEngine()
+
+        let result = try engine.saveCurrent(name: "Mine")
+
+        guard case .fixed(let appearance, let variant) = result.preset.kind else {
+            Issue.record("expected a fixed preset")
+            return
+        }
+        #expect(appearance == .dark)
+        #expect(variant.accent == .green)
+        #expect(result.wallpaperProblem == nil)
+        #expect(try Data(contentsOf: store.wallpaperURL(named: variant.wallpaper!.imageName)) == Data("image".utf8))
+        #expect(engine.library.activePresetID == result.preset.id)
+    }
+
+    @Test func saveCurrentWithAutoOnMakesAnAutoPreset() throws {
+        system.snapshot = SystemSnapshot(switchesAutomatically: true, appearance: .light, accent: .red)
+        let engine = try makeEngine()
+
+        let preset = try engine.saveCurrent(name: "Mine").preset
+
+        #expect(preset.appearanceMode == .automatic)
+        #expect(preset.variant(for: .dark).accent == .red)
+    }
+
+    @Test func saveCurrentStillSavesWhenTheWallpaperCantBeCopied() throws {
+        system.snapshot = SystemSnapshot(switchesAutomatically: false, appearance: .light, accent: .red, wallpaperURL: URL(fileURLWithPath: "/nonexistent/x.png"))
+        let engine = try makeEngine()
+
+        let result = try engine.saveCurrent(name: "Mine")
+
+        #expect(result.wallpaperProblem != nil)
+        #expect(result.preset.variant(for: .light).wallpaper == nil)
+    }
+
+    @Test func deletingTheActivePresetClearsIt() async throws {
+        let engine = try makeEngine(with: fixedPreset)
+        await engine.apply(presetID: fixedPreset.id)
+
+        try engine.delete(presetID: fixedPreset.id)
+
+        #expect(engine.library.presets.isEmpty)
+        #expect(engine.library.activePresetID == nil)
+    }
+
+    @Test func modifiedComparesAgainstTheActivePreset() async throws {
+        let engine = try makeEngine(with: fixedPreset)
+        #expect(!engine.activePresetIsModified())
+
+        await engine.apply(presetID: fixedPreset.id)
+        let image = store.wallpaperURL(named: "d.png")
+        system.snapshot = SystemSnapshot(switchesAutomatically: false, appearance: .dark, accent: .red, wallpaperURL: image)
+        #expect(!engine.activePresetIsModified())
+
+        system.snapshot.accent = .green
+        #expect(engine.activePresetIsModified())
+        system.snapshot.accent = .red
+
+        system.snapshot.switchesAutomatically = true
+        #expect(engine.activePresetIsModified())
+        system.snapshot.switchesAutomatically = false
+
+        system.snapshot.wallpaperURL = URL(fileURLWithPath: "/tmp/other.png")
+        #expect(engine.activePresetIsModified())
+        system.snapshot.wallpaperURL = image
+
+        system.snapshot.highlight = ThemeColor(red: 1, green: 0, blue: 0)
+        #expect(engine.activePresetIsModified())
+    }
+
+    @Test func modifiedRecognisesTheGeneratedAdaptiveWallpaper() async throws {
+        let engine = try makeEngine(with: autoPreset)
+        await engine.apply(presetID: autoPreset.id)
+        system.snapshot = SystemSnapshot(switchesAutomatically: true, appearance: .light, accent: .blue,
+                                         wallpaperURL: URL(fileURLWithPath: "/any/Generated/l-d.heic"))
+        #expect(!engine.activePresetIsModified())
     }
 
     @Test func reconcileFollowsAnAppearanceChange() async throws {

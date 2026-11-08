@@ -19,6 +19,11 @@ public struct ThemeColor: Codable, Sendable, Equatable {
         self.green = min(max(green, 0), 1)
         self.blue = min(max(blue, 0), 1)
     }
+
+    /// Stored colours lose some precision, so exact comparison would report false changes.
+    func isClose(to other: ThemeColor) -> Bool {
+        abs(red - other.red) < 0.001 && abs(green - other.green) < 0.001 && abs(blue - other.blue) < 0.001
+    }
 }
 
 public struct WallpaperSpec: Codable, Sendable, Equatable {
@@ -95,7 +100,9 @@ extension Preset {
         if case .auto(let light, let dark) = kind,
            let lightImage = light.wallpaper?.imageName,
            let darkImage = dark.wallpaper?.imageName {
-            return .adaptive(lightImageName: lightImage, darkImageName: darkImage)
+            return lightImage == darkImage
+                ? .still(imageName: lightImage)
+                : .adaptive(lightImageName: lightImage, darkImageName: darkImage)
         }
         return variant(for: appearance).wallpaper.map { .still(imageName: $0.imageName) }
     }

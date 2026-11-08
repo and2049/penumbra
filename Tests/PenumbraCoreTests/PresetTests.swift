@@ -25,6 +25,11 @@ import Testing
         #expect(preset.wallpaperTarget(for: .light) == .adaptive(lightImageName: "l.png", darkImageName: "d.png"))
     }
 
+    @Test func autoPresetWithTheSameImageTwiceIsStill() {
+        let preset = Preset(name: "A", kind: .auto(light: light, dark: light))
+        #expect(preset.wallpaperTarget(for: .dark) == .still(imageName: "l.png"))
+    }
+
     @Test func autoPresetWithOneWallpaperOnlySetsItInThatMode() {
         let preset = Preset(name: "A", kind: .auto(light: light, dark: ThemeVariant(accent: .red)))
         #expect(preset.wallpaperTarget(for: .light) == .still(imageName: "l.png"))

@@ -37,6 +37,15 @@ import Testing
         #expect(throws: (any Error).self) { try store.load() }
     }
 
+    @Test func importingAnImageAlreadyInTheStoreReusesIt() throws {
+        try FileManager.default.createDirectory(at: store.wallpaperDirectory, withIntermediateDirectories: true)
+        let existing = store.wallpaperURL(named: "abc.png")
+        try Data("image".utf8).write(to: existing)
+
+        #expect(try store.importWallpaper(from: existing).imageName == "abc.png")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: store.wallpaperDirectory.path) == ["abc.png"])
+    }
+
     @Test func importCopiesTheWallpaperIntoTheStore() throws {
         let source = FileManager.default.temporaryDirectory.appending(path: "penumbra-source-\(UUID()).PNG")
         try Data("image".utf8).write(to: source)

@@ -37,8 +37,15 @@ public final class LiveThemeSystem: ThemeSystem {
         ))
     }
 
+    /// The location Penumbra keeps its data, shared by the app and the command-line tool.
+    public static var defaultSupportDirectory: URL {
+        URL.applicationSupportDirectory.appending(path: "Penumbra", directoryHint: .isDirectory)
+    }
+
+    /// Asks SkyLight first, because `effectiveAppearance` lags behind a change just made.
     public var currentAppearance: Appearance {
-        NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .dark : .light
+        if let skyLight { return skyLight.isDark ? .dark : .light }
+        return NSApplication.shared.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .dark : .light
     }
 
     public func setAppearanceMode(_ mode: AppearanceMode) throws {
@@ -66,15 +73,47 @@ public final class LiveThemeSystem: ThemeSystem {
         case .still(let url):
             try await wallpaperApplier.apply(url)
         case .adaptive(let light, let dark):
-            // Imported names are unique and never change, so one build per pair is enough.
-            let name = "\(light.deletingPathExtension().lastPathComponent)-\(dark.deletingPathExtension().lastPathComponent).heic"
-            let output = generatedDirectory.appending(path: name)
+            let output = generatedDirectory.appending(path: ResolvedWallpaper.generatedFileName(light: light, dark: dark))
             if !FileManager.default.fileExists(atPath: output.path) {
                 try await Task.detached(priority: .userInitiated) {
                     try AdaptiveWallpaperBuilder.build(light: light, dark: dark, output: output)
                 }.value
             }
             try await wallpaperApplier.apply(output)
+        }
+    }
+
+    public func captureSnapshot() -> SystemSnapshot {
+        let accentValue = AccentPreferences.accentValue
+        let highlightValue = AccentPreferences.highlightValue
+        return SystemSnapshot(
+            switchesAutomatically: skyLight?.switchesAutomatically ?? false,
+            appearance: currentAppearance,
+            accent: AccentColor(preferenceValue: accentValue),
+            highlight: highlightValue.flatMap { ThemeColor(preferenceString: $0) },
+            wallpaperURL: NSScreen.main.flatMap { NSWorkspace.shared.desktopImageURL(for: $0) },
+            accentPreference: accentValue,
+            aquaVariantPreference: AccentPreferences.aquaVariantValue,
+            highlightPreference: highlightValue,
+            wallpaperStore: wallpaperApplier.currentStore)
+    }
+
+    public func restore(_ snapshot: SystemSnapshot) async throws {
+        AccentPreferences.restore(
+            accent: snapshot.accentPreference,
+            aquaVariant: snapshot.aquaVariantPreference,
+            highlight: snapshot.highlightPreference)
+
+        guard let skyLight else { throw ThemeSystemError.appearanceControlUnavailable }
+        // Auto goes last, so it can take over from the restored appearance.
+        skyLight.switchesAutomatically = false
+        skyLight.isDark = snapshot.appearance == .dark
+        skyLight.switchesAutomatically = snapshot.switchesAutomatically
+
+        if let store = snapshot.wallpaperStore {
+            try await wallpaperApplier.restoreStore(store, expecting: snapshot.wallpaperURL)
+        } else if let url = snapshot.wallpaperURL {
+            try await wallpaperApplier.apply(url)
         }
     }
 }

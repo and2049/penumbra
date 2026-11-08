@@ -10,6 +10,8 @@ public struct PresetLibrary: Codable, Sendable, Equatable {
     /// The appearance the active preset was last applied for, used to catch up after a
     /// switch that happened while Penumbra wasn't running.
     public var lastAppliedAppearance: Appearance?
+    /// How to get back to the state before the last preset was applied.
+    public var undo: UndoRecord?
 
     public init() {}
 
@@ -51,6 +53,9 @@ public struct PresetStore: Sendable {
 
     /// Copies an image into the store so presets keep working if the original moves.
     public func importWallpaper(from source: URL) throws -> WallpaperSpec {
+        if source.deletingLastPathComponent().standardizedFileURL == wallpaperDirectory.standardizedFileURL {
+            return WallpaperSpec(imageName: source.lastPathComponent)
+        }
         try FileManager.default.createDirectory(at: wallpaperDirectory, withIntermediateDirectories: true)
         let name = UUID().uuidString + "." + source.pathExtension.lowercased()
         try FileManager.default.copyItem(at: source, to: wallpaperDirectory.appending(path: name))
