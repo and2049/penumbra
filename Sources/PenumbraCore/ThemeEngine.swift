@@ -36,6 +36,16 @@ public struct ApplyReport: Sendable {
     public var succeeded: Bool { failures.isEmpty }
 }
 
+public enum ThemeEngineError: Error, Equatable, LocalizedError {
+    case duplicateName(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .duplicateName(let name): "There's already a preset called “\(name)”."
+        }
+    }
+}
+
 public struct SaveCurrentResult: Sendable {
     public var preset: Preset
     /// Why the wallpaper was left out, if it was.
@@ -75,7 +85,7 @@ public final class ThemeEngine {
         do {
             try system.setAppearanceMode(preset.appearanceMode)
         } catch {
-            report.failures[.appearance] = String(describing: error)
+            report.failures[.appearance] = error.localizedDescription
         }
 
         let appearance = system.currentAppearance
@@ -99,7 +109,7 @@ public final class ThemeEngine {
             library.lastAppliedAppearance = record.previousLastAppliedAppearance
             library.undo = nil
         } catch {
-            report.failures[.restoring] = String(describing: error)
+            report.failures[.restoring] = error.localizedDescription
         }
         save(&report)
         return report
@@ -123,6 +133,7 @@ public final class ThemeEngine {
     /// Saves the current system state as a new active preset. With Auto on, both modes start
     /// with the current look, since only one of them can be seen.
     public func saveCurrent(name: String) throws -> SaveCurrentResult {
+        try checkNameIsFree(name, for: nil)
         let snapshot = system.captureSnapshot()
 
         var wallpaper: WallpaperSpec?
@@ -131,7 +142,7 @@ public final class ThemeEngine {
             do {
                 wallpaper = try store.importWallpaper(from: url)
             } catch {
-                problem = String(describing: error)
+                problem = error.localizedDescription
             }
         } else {
             problem = "macOS didn't report a wallpaper file"
@@ -151,6 +162,7 @@ public final class ThemeEngine {
 
     /// Adds or replaces a preset by ID.
     public func save(preset: Preset) throws {
+        try checkNameIsFree(preset.name, for: preset.id)
         if let index = library.presets.firstIndex(where: { $0.id == preset.id }) {
             library.presets[index] = preset
         } else {
@@ -169,6 +181,14 @@ public final class ThemeEngine {
         }
         try store.save(library)
         removeUnusedFiles()
+    }
+
+    /// Names are how the command-line tool and URL scheme find presets, so they must be unique.
+    private func checkNameIsFree(_ name: String, for id: Preset.ID?) throws {
+        let taken = library.presets.contains {
+            $0.id != id && $0.name.compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+        }
+        if taken { throw ThemeEngineError.duplicateName(name) }
     }
 
     /// Deletes copied and generated wallpapers that nothing uses any more. Files still shown
@@ -228,7 +248,7 @@ public final class ThemeEngine {
         do {
             try await system.setWallpaper(resolve(target))
         } catch {
-            report.failures[.wallpaper] = String(describing: error)
+            report.failures[.wallpaper] = error.localizedDescription
         }
     }
 
@@ -245,7 +265,7 @@ public final class ThemeEngine {
         do {
             try store.save(library)
         } catch {
-            report.failures[.saving] = String(describing: error)
+            report.failures[.saving] = error.localizedDescription
         }
     }
 }

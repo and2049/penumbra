@@ -193,6 +193,23 @@ struct TestFailure: Error {}
         #expect(result.preset.variant(for: .light).wallpaper == nil)
     }
 
+    @Test func duplicateNamesAreRefusedIgnoringCase() throws {
+        let engine = try makeEngine(with: fixedPreset)
+        let clash = Preset(name: "fixed", kind: fixedPreset.kind)
+
+        #expect(throws: ThemeEngineError.duplicateName("fixed")) { try engine.save(preset: clash) }
+        #expect(throws: ThemeEngineError.duplicateName("FIXED")) { try engine.saveCurrent(name: "FIXED") }
+        #expect(engine.library.presets.count == 1)
+    }
+
+    @Test func savingAPresetUnderItsOwnNameIsAllowed() throws {
+        let engine = try makeEngine(with: fixedPreset)
+        var edited = fixedPreset
+        edited.kind = autoPreset.kind
+        try engine.save(preset: edited)
+        #expect(engine.library.presets == [edited])
+    }
+
     @Test func deletingTheActivePresetClearsIt() async throws {
         let engine = try makeEngine(with: fixedPreset)
         await engine.apply(presetID: fixedPreset.id)

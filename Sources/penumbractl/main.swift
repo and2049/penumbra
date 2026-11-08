@@ -127,5 +127,5 @@ do {
         fail(usage)
     }
 } catch {
-    fail("error: \(error)")
+    fail("error: \(error.localizedDescription)")
 }

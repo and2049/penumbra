@@ -20,9 +20,15 @@ public struct PresetLibrary: Codable, Sendable, Equatable {
     }
 }
 
-public enum PresetStoreError: Error, Equatable {
+public enum PresetStoreError: Error, Equatable, LocalizedError {
     /// Saved by a newer build. Refusing to load it means it can't be overwritten by accident.
     case unsupportedSchema(Int)
+
+    public var errorDescription: String? {
+        switch self {
+        case .unsupportedSchema: "The presets were saved by a newer version of Penumbra."
+        }
+    }
 }
 
 public struct PresetStore: Sendable {

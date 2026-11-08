@@ -29,8 +29,12 @@ public final class WallpaperApplier {
         }
     }
 
-    public enum RestoreError: Error, Equatable {
+    public enum RestoreError: Error, Equatable, LocalizedError {
         case notConfirmed
+
+        public var errorDescription: String? {
+            "macOS didn't confirm the wallpaper change."
+        }
     }
 
     private let environment: Environment

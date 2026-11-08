@@ -4,9 +4,16 @@ import ImageIO
 /// Combines two images into one HEIC that macOS swaps by itself when the appearance changes,
 /// so the wallpaper still follows Auto when Penumbra isn't running.
 public enum AdaptiveWallpaperBuilder {
-    public enum BuildError: Error, Equatable {
+    public enum BuildError: Error, Equatable, LocalizedError {
         case unreadableImage(URL)
         case encodingFailed
+
+        public var errorDescription: String? {
+            switch self {
+            case .unreadableImage(let url): "Couldn't read the image “\(url.lastPathComponent)”."
+            case .encodingFailed: "Couldn't create the light and dark wallpaper."
+            }
+        }
     }
 
     /// Image indexes in the file. macOS reads these from the `apple_desktop:apr` metadata.

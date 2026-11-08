@@ -1,8 +1,12 @@
 import AppKit
 import PenumbraCore
 
-public enum ThemeSystemError: Error {
+public enum ThemeSystemError: Error, LocalizedError {
     case appearanceControlUnavailable
+
+    public var errorDescription: String? {
+        "This version of macOS doesn't allow Penumbra to change light and dark mode."
+    }
 }
 
 /// The real `ThemeSystem`, which changes settings on this Mac.
