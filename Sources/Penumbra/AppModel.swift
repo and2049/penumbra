@@ -169,6 +169,18 @@ final class AppModel {
         }
     }
 
+    /// Moves a preset to a new position in the list. Runs straight away rather than queued,
+    /// so the list never shows the old order after a drag. Nothing happens while busy.
+    func move(_ preset: Preset, to index: Int) {
+        guard let engine, !isBusy else { return }
+        do {
+            try engine.move(presetID: preset.id, to: index)
+        } catch {
+            message = "Couldn't reorder the presets. \(error.localizedDescription)"
+        }
+        refresh()
+    }
+
     /// Runs one operation at a time, because wallpaper changes wait for the agent to restart
     /// and two running together could restore a stale copy of the store.
     private func enqueue(_ operation: @escaping @MainActor (ThemeEngine) async -> Void) {

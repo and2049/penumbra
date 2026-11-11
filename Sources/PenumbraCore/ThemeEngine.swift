@@ -183,6 +183,15 @@ public final class ThemeEngine {
         removeUnusedFiles()
     }
 
+    /// Moves a preset to a new position in the list. Positions past either end are clamped.
+    public func move(presetID: Preset.ID, to index: Int) throws {
+        guard let current = library.presets.firstIndex(where: { $0.id == presetID }) else { return }
+        let target = min(max(index, 0), library.presets.count - 1)
+        guard target != current else { return }
+        library.presets.insert(library.presets.remove(at: current), at: target)
+        try store.save(library)
+    }
+
     private func checkNameIsFree(_ name: String, for id: Preset.ID?) throws {
         if library.isNameTaken(name, excluding: id) { throw ThemeEngineError.duplicateName(name) }
     }

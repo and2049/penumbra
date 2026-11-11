@@ -210,6 +210,21 @@ struct TestFailure: Error {}
         #expect(engine.library.presets == [edited])
     }
 
+    @Test func movingReordersAndSurvivesReload() throws {
+        let third = Preset(name: "Third", kind: fixedPreset.kind)
+        let engine = try makeEngine(with: autoPreset, fixedPreset, third)
+
+        try engine.move(presetID: autoPreset.id, to: 2)
+        #expect(engine.library.presets == [fixedPreset, third, autoPreset])
+
+        try engine.move(presetID: third.id, to: -5)
+        #expect(engine.library.presets == [third, fixedPreset, autoPreset])
+
+        try engine.move(presetID: third.id, to: 99)
+        try engine.reload()
+        #expect(engine.library.presets == [fixedPreset, autoPreset, third])
+    }
+
     @Test func deletingTheActivePresetClearsIt() async throws {
         let engine = try makeEngine(with: fixedPreset)
         await engine.apply(presetID: fixedPreset.id)

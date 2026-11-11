@@ -12,6 +12,9 @@ final class PanelState {
     var newName = ""
     var presetToDelete: Preset?
     var hoveredPresetID: Preset.ID?
+    var draggedPresetID: Preset.ID?
+    var dragTranslation: CGFloat = 0
+    var presetRowHeight: CGFloat = 0
     var isEditingSchedule = false
     var scheduleMode: NightShiftStatus.Mode = .custom
     var scheduleFrom = Date()
@@ -148,21 +151,81 @@ struct MenuBarPanel: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         } else {
-            VStack(spacing: 2) {
-                ForEach(model.presets) { preset in
+            let dragSource = dragSourceIndex
+            let dragTarget = dragSource.map { dragTargetIndex(from: $0) }
+            VStack(spacing: Self.presetRowSpacing) {
+                ForEach(Array(model.presets.enumerated()), id: \.element.id) { index, preset in
+                    let isDragged = index == dragSource
+                    let shift = isDragged ? 0 : rowShift(at: index, source: dragSource, target: dragTarget)
                     PresetRow(
                         preset: preset,
                         isActive: preset.id == model.activePresetID,
                         isModified: preset.id == model.activePresetID && model.isActivePresetModified,
-                        isHovered: state.hoveredPresetID == preset.id,
+                        // Rows sliding under the pointer during a drag shouldn't light up.
+                        isHovered: dragSource == nil ? state.hoveredPresetID == preset.id : isDragged,
+                        canReorder: model.presets.count > 1,
                         appearance: model.appearance,
                         apply: { model.apply(preset) },
                         hover: { state.hoveredPresetID = $0 ? preset.id : nil },
                         edit: { model.edit(preset) },
-                        delete: { state.presetToDelete = preset })
+                        delete: { state.presetToDelete = preset },
+                        dragChanged: {
+                            state.draggedPresetID = preset.id
+                            state.dragTranslation = $0
+                        },
+                        dragEnded: { endDrag(of: preset, translation: $0) })
+                    .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { state.presetRowHeight = $0 }
+                    .offset(y: shift)
+                    .animation(isDragged ? nil : Self.reorderAnimation, value: shift)
+                    .offset(y: isDragged ? draggedRowOffset(from: index) : 0)
+                    .zIndex(isDragged ? 1 : 0)
                 }
             }
             .disabled(model.isBusy || model.loadError != nil)
+        }
+    }
+
+    private static let presetRowSpacing: CGFloat = 2
+    private static let reorderAnimation = Animation.snappy(duration: 0.2)
+
+    private var rowStride: CGFloat {
+        max(state.presetRowHeight + Self.presetRowSpacing, 1)
+    }
+
+    /// Where the dragged preset started. A drag is dropped if the list goes busy under it.
+    private var dragSourceIndex: Int? {
+        guard !model.isBusy, let id = state.draggedPresetID else { return nil }
+        return model.presets.firstIndex { $0.id == id }
+    }
+
+    private func dragTargetIndex(from source: Int, translation: CGFloat? = nil) -> Int {
+        let steps = Int(((translation ?? state.dragTranslation) / rowStride).rounded())
+        return min(max(source + steps, 0), model.presets.count - 1)
+    }
+
+    /// Keeps the dragged row inside the list.
+    private func draggedRowOffset(from source: Int) -> CGFloat {
+        let up = -CGFloat(source) * rowStride
+        let down = CGFloat(model.presets.count - 1 - source) * rowStride
+        return min(max(state.dragTranslation, up), down)
+    }
+
+    /// Rows between the dragged row's start and its target step aside to make room.
+    private func rowShift(at index: Int, source: Int?, target: Int?) -> CGFloat {
+        guard let source, let target else { return 0 }
+        if source < index, index <= target { return -rowStride }
+        if target <= index, index < source { return rowStride }
+        return 0
+    }
+
+    private func endDrag(of preset: Preset, translation: CGFloat) {
+        let source = model.presets.firstIndex { $0.id == preset.id }
+        withAnimation(Self.reorderAnimation) {
+            if let source, state.draggedPresetID == preset.id {
+                model.move(preset, to: dragTargetIndex(from: source, translation: translation))
+            }
+            state.draggedPresetID = nil
+            state.dragTranslation = 0
         }
     }
 
@@ -254,13 +317,47 @@ private struct PresetRow: View {
     let isActive: Bool
     let isModified: Bool
     let isHovered: Bool
+    let canReorder: Bool
     let appearance: Appearance
     let apply: () -> Void
     let hover: (Bool) -> Void
     let edit: () -> Void
     let delete: () -> Void
+    let dragChanged: (CGFloat) -> Void
+    let dragEnded: (CGFloat) -> Void
 
     var body: some View {
+        HStack(spacing: 0) {
+            applyButton
+            if canReorder {
+                dragHandle
+            }
+        }
+        .background(isHovered ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear), in: .rect(cornerRadius: 6))
+        .onHover(perform: hover)
+        .contextMenu {
+            Button("Edit…", action: edit)
+            Button("Delete…", role: .destructive, action: delete)
+        }
+    }
+
+    /// Measured in global coordinates, because the row itself moves during the drag.
+    private var dragHandle: some View {
+        Image(systemName: "line.3.horizontal")
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+            .padding(.horizontal, 6)
+            .frame(maxHeight: .infinity)
+            .contentShape(.rect)
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { dragChanged($0.translation.height) }
+                    .onEnded { dragEnded($0.translation.height) })
+            .help("Drag to reorder")
+            .accessibilityLabel("Reorder")
+    }
+
+    private var applyButton: some View {
         Button(action: apply) {
             HStack(spacing: 8) {
                 Image(systemName: kindSymbol)
@@ -282,18 +379,13 @@ private struct PresetRow: View {
                         .accessibilityLabel("Active")
                 }
             }
-            .padding(.horizontal, 6)
+            .padding(.leading, 6)
+            .padding(.trailing, canReorder ? 2 : 6)
             .padding(.vertical, 4)
             .contentShape(.rect)
-            .background(isHovered ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear), in: .rect(cornerRadius: 6))
         }
         .buttonStyle(.plain)
-        .onHover(perform: hover)
         .help(isModified ? "Changed since it was applied. Click to apply it again." : "Apply \(preset.name)")
-        .contextMenu {
-            Button("Edit…", action: edit)
-            Button("Delete…", role: .destructive, action: delete)
-        }
     }
 
     private var kindSymbol: String {
