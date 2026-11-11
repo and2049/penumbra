@@ -32,7 +32,7 @@ final class MenuBarController: NSObject {
     func showPopover() {
         guard let button = statusItem.button else { return }
         model.refresh()
-        NSApp.activate()
+        NSApp.activate(ignoringOtherApps: true)
         if !popover.isShown {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         }
